@@ -22,7 +22,6 @@ def restore_contractions(text):
     return text
 
 def correct_vowel_removed(word):
-    # Tries to restore missing vowels by matching to vocab
     pattern = re.sub(r"[aeiou]", "", word)
     matches = [w for w in vocab if re.sub(r"[aeiou]", "", w) == pattern]
     return matches[0] if matches else word
@@ -34,36 +33,37 @@ def phonetic_correction(word):
     candidates = get_close_matches(word, vocab, n=3, cutoff=0.8)
     return candidates[0] if candidates else word
 
-def normalize_sentence(tokens, window=2):
-    normalized = []
-    for i, w in enumerate(tokens):
-        w = reduce_repeated_chars(w)
-        if w in slang_dict:
-            norm = slang_dict[w]
-        elif w in vocab:
-            norm = w
-        else:
-            # Try spelling correction
-            corr = correct_spelling(w)
-            if corr in vocab:
-                norm = corr
-            else:
-                # Try restoring vowels
-                norm = correct_vowel_removed(w)
-                if norm not in vocab:
-                    # Final fallback: phonetic match
-                    norm = phonetic_correction(w)
-
-        norm = context_refine(norm, tokens[max(0,i-window):i] + tokens[i+1:i+1+window])
-        normalized.append(norm)
-    return normalized
-
 def normalize_text(text):
     text = clean_text(text)
     text = restore_contractions(text)
-    for phrase, repl in slang_dict.items():
-        if phrase in text:
-            text = text.replace(phrase, repl)
-    tokens = text.split()
-    return " ".join(normalize_sentence(tokens))
 
+    # Step 1: Phrase-level slang replacement (e.g., "gd mrng" -> "good morning")
+    for phrase, replacement in slang_dict.items():
+        if " " in phrase:
+            text = text.replace(phrase, replacement)
+
+    tokens = text.split()
+
+    # Step 2: Word-level slang mapping
+    tokens = [slang_dict.get(w, w) for w in tokens]
+
+    # Step 3: Remaining corrections
+    normalized = []
+    for i, w in enumerate(tokens):
+        if w in vocab:
+            normalized.append(w)
+            continue
+
+        w = reduce_repeated_chars(w)
+        corr = correct_spelling(w)
+        if corr in vocab:
+            norm = corr
+        else:
+            norm = correct_vowel_removed(w)
+            if norm not in vocab:
+                norm = phonetic_correction(w)
+
+        norm = context_refine(norm, tokens[max(0, i-2):i] + tokens[i+1:i+3])
+        normalized.append(norm)
+
+    return " ".join(normalized)
